@@ -1,0 +1,62 @@
+local monarch = require "monarch.monarch"
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    msg.post("@render:", "use_fixed_fit_projection", { near = -1, far = 1 })
+    gui.set_enabled(gui.get_node('defaults_confirm'), fasle)
+end
+
+function on_input(self, action_id, action)
+    if action_id == hash("touch") and action.released then
+        if gui.pick_node(gui.get_node("back_button"), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            monarch.back()
+        elseif gui.pick_node(gui.get_node('sound_yes'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch', {sound = true})
+            local filename = sys.get_save_file("data", "sound")
+            sys.save(filename, {sound = true})
+        elseif gui.pick_node(gui.get_node('sound_no'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch', {sound = false})
+            local filename = sys.get_save_file("data", "sound")
+            sys.save(filename, {sound = false})
+        elseif gui.pick_node(gui.get_node('music_yes'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            local filename = sys.get_save_file("data", "music")
+            sys.save(filename, {music = true})
+            msg.post('main:/home#main', 'play_music')
+        elseif gui.pick_node(gui.get_node('music_no'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            local filename = sys.get_save_file("data", "music")
+            sys.save(filename, {music = false})
+            msg.post('main:/home#main', 'stop_music')
+        elseif gui.pick_node(gui.get_node('defaults_yes'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            gui.set_enabled(gui.get_node('defaults_confirm'), true)
+        elseif gui.is_enabled(gui.get_node('defaults_confirm')) and gui.pick_node(gui.get_node('confirm_yes'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            restore_defaults(self)
+            monarch.back()
+        elseif gui.is_enabled(gui.get_node('defaults_confirm')) and gui.pick_node(gui.get_node('confirm_no'), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            gui.set_enabled(gui.get_node('defaults_confirm'), false)
+        end
+    end
+end
+
+function restore_defaults(self)
+    stats = {
+        hands_played = 0,
+        hands_won = 0,
+        hands_pushed = 0,
+        hands_lost = 0,
+        win_percent = 0,
+        blackjacks = 0,
+        busts = 0,
+        money_wagered = 0,
+        net_profit = 0,
+        money_borrowed = 0}
+    local filename = sys.get_save_file("data", "stats")
+    sys.save(filename, stats)
+    local filename = sys.get_save_file("data", "data")
+    sys.save(filename, {balance = 1000})
+end

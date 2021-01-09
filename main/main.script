@@ -1,0 +1,67 @@
+local monarch = require('monarch.monarch')
+
+--This script sends a message to itself to make sure monarch is initialized 
+--before its functions are called
+
+function init(self)
+	msg.post('.', 'initialize')
+
+	self.music = true
+	self.sound = true
+	load_music(self)
+	load_sounds(self)
+	self.music_currently_playing = self.music
+
+	if self.music == true then
+		sound.play('#music')
+	end
+end
+
+function on_message(self, message_id, message)
+	if message_id == hash('initialize') then
+		monarch.show(hash('home'))
+	elseif message_id == hash('stop_music') then
+		if self.music_currently_playing then
+			sound.stop('#music')
+			self.music_currently_playing = false
+		end
+	elseif message_id == hash('play_music') then
+		if not self.music_currently_playing then
+			sound.play('#music')
+			self.music_currently_playing = true
+		end
+	elseif message_id == hash('touch') then
+		if message.sound == nil then
+			play_touch_sound(self)
+		else
+			self.sound = message.sound
+			play_touch_sound(self)
+		end
+	end
+end
+
+function play_touch_sound(self)
+	if self.sound then
+		sound.play('#touch')
+	end
+end
+
+function load_sounds(self)
+	local filename = sys.get_save_file("data", "sound")
+	local data = sys.load(filename)
+	if data.sound == nil then
+		self.sound = true
+	else
+		self.sound = data.sound
+	end
+end
+
+function load_music(self)
+	local filename = sys.get_save_file("data", "music")
+	local data = sys.load(filename)
+	if data.music == nil then
+		self.music = true
+	else
+		self.music = data.music
+	end
+end

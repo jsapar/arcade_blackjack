@@ -1,0 +1,1207 @@
+local monarch = require "monarch.monarch"
+
+function init(self)
+	msg.post("@render:", "use_fixed_fit_projection", { near = -1, far = 1 })
+
+	disable_outcome()
+	disble_count()
+	disable_insurance()
+	disable_bet_menu()
+
+	self.balance = 1000
+	self.sound = true
+	self.stats = {
+	hands_played = 0,
+	hands_won = 0,
+	hands_pushed = 0,
+	hands_lost = 0,
+	win_percent = 0, -- no push
+	blackjacks = 0,
+	busts = 0,
+	money_wagered = 0,
+	net_profit = 0,
+	money_borrowed = 0}
+	
+	--get saved data if there is any
+	load(self)
+	load_sound(self)
+	load_stats(self)
+	
+	self.bet = 1
+	self.winnings_multiplier = 1
+	self.insurance_activated = false
+	
+	self.player_ace_count = 0
+	self.dealer_ace_count = 0
+	
+	self.hidden_card = 0
+	self.card_counter = 4
+	self.player_card_counter = 2
+	self.dealer_card_counter = 2
+	
+	self.player_count = 0
+	self.dealer_count = 0
+
+	self.dealer_card_x = 300
+	self.dealer_card_y = 830
+
+	self.player_card_x = 300
+	self.player_card_y = 275
+
+	self.split_hand_1_x = 425
+	self.split_hand_1_y = 275
+
+	self.split_hand_2_x = 125
+	self.split_hand_2_y = 275
+
+	self.bet_menu_open = false
+	self.has_active_hand = false
+	set_balance(self)
+	
+	self.active_go = {}
+	self.active_go_counter = 1
+	
+	self.dealer = {}
+	self.player = {}
+
+	self.split_hand_1 = {}
+	self.split_hand_2 = {}
+	self.split_hand_1_count = 0
+	self.split_hand_1_ace_count = 0
+	self.split_hand_2_count = 0
+	self.split_hand_2_ace_count = 0
+	self.split_hand_1_card_counter = 2
+	self.split_hand_2_card_counter = 2
+	self.split_double_1 = false
+	self.split_double_2 = false
+	self.did_split = false
+	self.on_second_hand = false
+	self.split_double_hand_1 = true
+	
+	local cards = {
+	{'2', 2, 'Clubs'}, {'2', 2, 'Spades'}, 
+	{'3', 3, 'Clubs'}, {'3', 3, 'Spades'},
+	{'4', 4, 'Clubs'}, {'4', 4, 'Spades'},
+	{'5', 5, 'Clubs'}, {'5', 5, 'Spades'},
+	{'6', 6, 'Clubs'}, {'6', 6, 'Spades'},
+	{'7', 7, 'Clubs'}, {'7', 7, 'Spades'},
+	{'8', 8, 'Clubs'}, {'8', 8, 'Spades'},
+	{'9', 9, 'Clubs'}, {'9', 9, 'Spades'},
+	{'10',10, 'Clubs'}, {'10', 10, 'Spades'},
+	{'J', 10, 'Clubs'}, {'J', 10, 'Spades'},
+	{'Q', 10, 'Clubs'}, {'Q', 10, 'Spades'},
+	{'K', 10, 'Clubs'}, {'K', 10, 'Spades'},
+	{'A', 11, 'Clubs'}, {'A', 11, 'Spades'},
+
+	{'2', 2, 'Diamonds'}, {'2', 2, 'Hearts'}, 
+	{'3', 3, 'Diamonds'}, {'3', 3, 'Hearts'},
+	{'4', 4, 'Diamonds'}, {'4', 4, 'Hearts'},
+	{'5', 5, 'Diamonds'}, {'5', 5, 'Hearts'},
+	{'6', 6, 'Diamonds'}, {'6', 6, 'Hearts'},
+	{'7', 7, 'Diamonds'}, {'7', 7, 'Hearts'},
+	{'8', 8, 'Diamonds'}, {'8', 8, 'Hearts'},
+	{'9', 9, 'Diamonds'}, {'9', 9, 'Hearts'},
+	{'10', 10, 'Diamonds'}, {'10', 10, 'Hearts'},
+	{'J', 10, 'Diamonds'}, {'J', 10, 'Hearts'},
+	{'Q', 10, 'Diamonds'}, {'Q', 10, 'Hearts'},
+	{'K', 10, 'Diamonds'}, {'K', 10, 'Hearts'},
+	{'A', 11, 'Diamonds'}, {'A', 11, 'Hearts'}}
+
+	self.deck = {}
+	for i = 0, 4, 1 do
+		for j, v in ipairs(cards) do
+			self.deck[i*52 + j] = v
+		end
+	end
+end
+
+function on_message(self, message_id, message, sender)
+	if message_id == hash('hit') then
+		if self.has_active_hand then
+			if self.did_split then
+				split_hit(self)
+				if self.sound then
+					sound.play('#card_place')
+				end
+			else
+				if self.sound then
+					sound.play('#card_place')
+				end
+				hit(self)
+			end
+		end
+	elseif message_id == hash('stand') then
+		if self.has_active_hand then
+			if self.did_split then
+				split_stand(self)
+				if self.sound then
+					sound.play('#card_place')
+				end
+			else
+				stand(self)
+				if self.sound then
+					sound.play('#card_place')
+				end
+			end
+		end
+	elseif message_id == hash('double') then
+		if self.has_active_hand and self.card_counter == 4 and self.balance >= self.bet then
+			double(self)
+			if self.sound then
+				sound.play('#card_place')
+			end
+		elseif self.has_active_hand and self.did_split and check_valid_split_double(self) and self.balance >= self.bet then
+			split_double(self)
+			if self.sound then
+				sound.play('#card_place')
+			end
+		end
+	elseif message_id == hash('split') then
+		if self.has_active_hand and not self.did_split and self.player[1][2] == self.player[2][2] and self.balance >= self.bet then
+			split(self)
+			if self.sound then
+				sound.play('#split')
+			end
+		end
+	elseif message_id == hash('draw') then
+		if not self.has_active_hand then
+			if self.sound then
+				sound.play('#card_place')
+			end
+			draw(self)
+		end
+	elseif message_id == hash('bet_menu') then
+		if self.sound then
+			sound.play('#open_chips_menu')
+		end
+	elseif message_id == hash('add_bet') then
+		if message.bet <= self.balance and not self.has_active_hand then
+			self.bet = message.bet
+			msg.post('#gui', 'update_bet', {bet = self.bet})
+		end
+	elseif message_id == hash('yes_insurance') then
+		accept_insurance(self)
+	elseif message_id == hash('no_insurance') then
+		refuse_insurance(self)
+	elseif message_id == hash('back') then 
+		if not self.has_active_hand then
+			save(self)
+			save_stats(self)
+			clear_cards(self)
+			msg.post('main:/home#main', 'touch')
+			monarch.back()
+		end
+	elseif message_id == hash('borrow_money') then
+		borrow_money(self)
+	end
+end
+
+function draw(self)
+	if self.balance < self.bet then
+		return
+	end
+	
+	disable_draw(self)
+	self.has_active_hand = true
+
+	self.stats.money_wagered = self.stats.money_wagered + self.bet
+	self.balance = self.balance - self.bet
+	set_balance(self)
+	
+	clear_cards(self) -- clear the previous cards and hand data
+	enable_count() -- draw count to the screen
+	disable_outcome() -- outcome text is disabled
+
+	-- shuffle the deck and distrubute the cards
+	self.deck = shuffle(self.deck)
+	self.player[1] = self.deck[1]
+	self.dealer[1] = self.deck[2]
+	self.player[2] = self.deck[3]
+	self.dealer[2] = self.deck[4]
+
+	-- add up the player and dealer counts
+	-- if either the player or the dealer have an ace add to the ace count
+	if check_ace(self) then
+		set_ace(self)
+	else
+		self.player_count = self.player[1][2] + self.player[2][2]
+	end
+	if check_dealer_ace(self) then
+		set_dealer_ace(self)
+	else
+		self.dealer_count = self.dealer[1][2] + self.dealer[2][2]
+	end
+	
+	--update the displays for the counts
+	set_player_count(self)
+	set_dealer_count_hidden_card(self.dealer[1][2])
+
+	-- create the card objects and update the sprites
+	local player1 = factory.create("#card", vmath.vector3(250, 275, 0), nil, nil, nil)
+	msg.post(hash(player1), "play_animation", {id = hash(getCard(self.player[1]))})
+	local player2 = factory.create("#card", vmath.vector3(300, 275, 1), nil, nil, nil)
+	msg.post(hash(player2), "play_animation", {id = hash(getCard(self.player[2]))})
+	local dealer1 = factory.create("#card", vmath.vector3(250, 850, 0), nil, nil, nil)
+	msg.post(hash(dealer1), "play_animation", {id = hash(getCard(self.dealer[1]))})
+	local dealer2 = factory.create("#card", vmath.vector3(300, 850, 1), nil, nil, nil)
+	self.hidden_card = dealer2
+
+	-- add the active objects to the active objects list
+	insert_active_go(self, player1)
+	insert_active_go(self, player2)
+	insert_active_go(self, dealer1)
+	insert_active_go(self, dealer2)
+
+	--check insurance
+	if self.dealer[1][1] == 'A' and self.balance >= self.bet/2 then
+		offer_insurance(self)
+	else
+		check_blackjack(self)
+	end
+end
+
+function hit(self)
+	local card_count = get_card_count(self) -- get total card count
+	local player_card_count = get_player_card_count(self) -- get player card count
+	self.player[player_card_count] = self.deck[card_count] -- get next card data
+	-- create new card and save the id
+	if player_card_count % 4 == 0 then
+		self.player_card_y = self.player_card_y - 50
+		self.player_card_x = 250
+	else
+		self.player_card_x = self.player_card_x + 50
+	end
+	local new_card = factory.create("#card", vmath.vector3(self.player_card_x, self.player_card_y, 1), nil, nil, nil)
+	insert_active_go(self, new_card) -- add to the active objects
+	
+	-- add the new card value to the player count total
+	if self.player[player_card_count][1] == 'A' then
+		if self.player_ace_count == 0 then
+			if self.player_count + 11 <= 21 then
+				self.player_ace_count = self.player_count + 1
+				self.player_count = self.player_count + 11
+			else
+				self.player_count = self.player_count + 1
+			end
+		else
+			self.player_count = self.player_count + 1
+			self.player_ace_count = self.player_ace_count + 1
+		end
+	else
+		if self.player_ace_count == 0 then
+			self.player_count = self.player_count + self.player[player_card_count][2]
+		else
+			if self.player_count + self.player[player_card_count][2] > 21 then
+				self.player_count = self.player_ace_count + self.player[player_card_count][2]
+				self.player_ace_count = 0
+			else
+				self.player_count = self.player_count + self.player[player_card_count][2]
+				self.player_ace_count = self.player_ace_count + self.player[player_card_count][2]
+			end
+		end
+	end
+	set_player_count(self) -- update the player count on the gui
+	--set the new cards sprite
+	msg.post(hash(new_card), "play_animation", {id = hash(getCard(self.player[player_card_count]))})
+	-- if player busts then then player loses
+	if check_player_bust(self) then
+		flip_hidden_card(self)
+		msg.post('#gui', 'enable_outcome', {text = 'BUST'})
+		self.stats.busts = self.stats.busts + 1 
+		set_lose(self)
+	end
+	if self.player_count == 21 then
+		stand(self)
+	end
+end
+
+function stand(self)
+	flip_hidden_card(self)
+	local dealer_card_y = 850
+	local dealer_card_x = 300
+	while self.dealer_count <= 16 do
+		local card_count = get_card_count(self)
+		local dealer_card_count = get_dealer_card_count(self)
+		self.dealer[dealer_card_count] = self.deck[card_count]
+		if dealer_card_count % 4 == 0 then
+			dealer_card_y = dealer_card_y - 50
+			dealer_card_x = 250
+		else
+			dealer_card_x = dealer_card_x + 50
+		end
+		local new_card = factory.create("#card", vmath.vector3(dealer_card_x, dealer_card_y, 1), nil, nil, nil)
+		insert_active_go(self, new_card)
+		msg.post(hash(new_card), "play_animation", {id = hash(getCard(self.dealer[dealer_card_count]))})
+
+		--if the dealer drew an ace
+		if self.dealer[dealer_card_count][1] == 'A' then
+
+			--if doesn't have an ace already in their hand
+			if self.dealer_ace_count == 0 then
+
+				--if the dealer would bust with an 11
+				if self.dealer_count + 11 <= 21 then
+					self.dealer_ace_count = self.dealer_count + 1
+					self.dealer_count = self.dealer_count + 11
+				else
+					self.dealer_count = self.dealer_count + 1
+				end
+
+			--if the dealer does already have an ace in their hand 
+			else
+				self.dealer_count = self.dealer_count + 1
+				self.dealer_ace_count = self.dealer_ace_count + 1
+			end
+		else
+
+			--if the dealer didn't have and ace and didn't draw an ace
+			if self.dealer_ace_count == 0 then
+				self.dealer_count = self.dealer_count + self.dealer[dealer_card_count][2]
+
+			--if the dealer did have an ace and didn't draw one
+			else
+				if self.dealer_count + self.dealer[dealer_card_count][2] > 21 then
+					self.dealer_count = self.dealer_ace_count + self.dealer[dealer_card_count][2]
+					self.dealer_ace_count = 0
+				else
+					self.dealer_count = self.dealer_count + self.dealer[dealer_card_count][2]
+				end
+			end
+		end
+	end
+	set_dealer_count(self)
+	set_outcome(self)
+end
+
+function double(self)
+	self.winnings_multiplier = 2
+	self.balance = self.balance - self.bet
+	self.stats.money_wagered = self.stats.money_wagered + self.bet /2
+	
+	set_balance(self)
+	hit(self)
+	if not check_player_bust(self) then
+		stand(self)
+	else
+		self.stats.busts = self.stats.busts + 1 
+	end
+end
+
+function split(self)
+	self.did_split = true
+	self.balance = self.balance - self.bet
+	self.stats.money_wagered = self.stats.money_wagered + self.bet
+	
+	set_balance(self)
+	
+	self.split_hand_1[1] = self.player[1]
+	self.split_hand_2[1] = self.player[2]
+	
+	go.delete(self.active_go[1])
+	go.delete(self.active_go[2])
+
+	self.split_hand_1[2] = self.deck[get_card_count(self)]
+
+	local player1 = factory.create("#card", vmath.vector3(self.split_hand_1_x, 275, 0), nil, nil, nil)
+	msg.post(hash(player1), "play_animation", {id = hash(getCard(self.split_hand_1[1]))})
+	
+	self.split_hand_1_x = self.split_hand_1_x + 50
+	
+	local player2= factory.create("#card", vmath.vector3(self.split_hand_1_x, 275, 1), nil, nil, nil)
+	msg.post(hash(player2), "play_animation", {id = hash(getCard(self.split_hand_1[2]))})
+	local player3 = factory.create("#card", vmath.vector3(self.split_hand_2_x, 275, 0), nil, nil, nil)
+	msg.post(hash(player3), "play_animation", {id = hash(getCard(self.split_hand_2[1]))})
+
+	-- set the position for the next card thats placed
+	
+	--add the split cards to the empty active go list
+	self.active_go[1] = player1
+	self.active_go[2] = player2
+	
+	insert_active_go(self, player3)
+
+	if check_split_hand_ace(self, 1) then
+		set_split_hand_ace(self, 1)
+	else
+		self.split_hand_1_count = self.split_hand_1[1][2] + self.split_hand_1[2][2]
+	end
+
+	--check 21 auto-stand
+	if self.split_hand_1_count == 21 then
+		split_stand(self)
+	end
+
+	enable_split_counts(self)
+	set_split_hand_counts(self)
+end
+
+function split_hit(self)
+
+	-- first hand hit
+	if not self.on_second_hand then
+		-- get the new card and place it in the players hand
+		local card_count = get_card_count(self) -- get total card count
+		self.split_hand_1_card_counter = self.split_hand_1_card_counter + 1
+		local player_card_count = self.split_hand_1_card_counter -- get player card count
+		self.split_hand_1[player_card_count] = self.deck[card_count] -- get next card data
+		
+		-- determine the position of the card
+		if player_card_count % 4 == 0 then
+			self.split_hand_1_x = self.split_hand_1_x - 100
+			self.split_hand_1_y = self.split_hand_1_y - 50
+		else
+			self.split_hand_1_x = self.split_hand_1_x + 50
+		end
+
+		-- create new card and save the id
+		local new_card = factory.create("#card", vmath.vector3(self.split_hand_1_x, self.split_hand_1_y, 1), nil, nil, nil)
+		insert_active_go(self, new_card) -- add to the active objects
+
+		-- add the new card value to the player count total
+		if self.split_hand_1[player_card_count][1] == 'A' then
+			if self.split_hand_1_ace_count == 0 then
+				if self.split_hand_1_count + 11 <= 21 then
+					self.split_hand_1_ace_count = self.split_hand_1_count + 1
+					self.split_hand_1_count = self.split_hand_1_count + 11
+				else
+					self.split_hand_1_count = self.split_hand_1_count + 1
+				end
+			else
+				self.split_hand_1_count = self.split_hand_1_count + 1
+				self.split_hand_1_ace_count = self.split_hand_1_ace_count + 1
+			end
+		else
+			if self.split_hand_1_ace_count == 0 then
+				self.split_hand_1_count = self.split_hand_1_count + self.split_hand_1[player_card_count][2]
+			else
+				if self.split_hand_1_count + self.split_hand_1[player_card_count][2] > 21 then
+					self.split_hand_1_count = self.split_hand_1_ace_count + self.split_hand_1[player_card_count][2]
+					self.split_hand_1_ace_count = 0
+				else
+					self.split_hand_1_count = self.split_hand_1_count + self.split_hand_1[player_card_count][2]
+					self.split_hand_1_ace_count = self.split_hand_1_ace_count + self.split_hand_1[player_card_count][2]
+				end
+			end
+		end
+		set_split_hand_counts(self)-- update the split hand count on the gui
+		
+		--set the new cards sprite
+		msg.post(hash(new_card), "play_animation", {id = hash(getCard(self.split_hand_1[player_card_count]))})
+		-- if player busts then then player loses
+		if check_split_bust(self, 1) then
+			self.stats.busts = self.stats.busts + 1 
+			split_stand(self)
+		end
+		if self.split_hand_1_count == 21 then
+			split_stand(self)
+		end
+
+	--second hand
+	else
+		-- get the new card and place it in the players hand
+		local card_count = get_card_count(self) -- get total card count
+		self.split_hand_2_card_counter = self.split_hand_2_card_counter + 1
+		local player_card_count = self.split_hand_2_card_counter -- get player card count
+		self.split_hand_2[player_card_count] = self.deck[card_count] -- get next card data
+
+		-- determine the position of the card
+		if player_card_count % 4 == 0 then
+			self.split_hand_2_x = self.split_hand_2_x - 100
+			self.split_hand_2_y = self.split_hand_2_y - 50
+		else
+			self.split_hand_2_x = self.split_hand_2_x + 50
+		end
+
+		-- create new card and save the id
+		local new_card = factory.create("#card", vmath.vector3(self.split_hand_2_x, self.split_hand_2_y, 1), nil, nil, nil)
+		insert_active_go(self, new_card) -- add to the active objects
+
+		-- add the new card value to the player count total
+		if self.split_hand_2[player_card_count][1] == 'A' then
+			if self.split_hand_2_ace_count == 0 then
+				if self.split_hand_2_count + 11 <= 21 then
+					self.split_hand_2_ace_count = self.split_hand_2_count + 1
+					self.split_hand_2_count = self.split_hand_2_count + 11
+				else
+					self.split_hand_2_count = self.split_hand_2_count + 1
+				end
+			else
+				self.split_hand_2_count = self.split_hand_2_count + 1
+				self.split_hand_2_ace_count = self.split_hand_2_ace_count + 1
+			end
+		else
+			if self.split_hand_2_ace_count == 0 then
+				self.split_hand_2_count = self.split_hand_2_count + self.split_hand_2[player_card_count][2]
+			else
+				if self.split_hand_2_count + self.split_hand_2[player_card_count][2] > 21 then
+					self.split_hand_2_count = self.split_hand_2_ace_count + self.split_hand_2[player_card_count][2]
+					self.split_hand_2_ace_count = 0
+				else
+					self.split_hand_2_count = self.split_hand_2_count + self.split_hand_2[player_card_count][2]
+					self.split_hand_2_ace_count = self.split_hand_2_ace_count + self.split_hand_2[player_card_count][2]
+				end
+			end
+		end
+		set_split_hand_counts(self)-- update the split hand count on the gui
+
+		--set the new cards sprite
+		msg.post(hash(new_card), "play_animation", {id = hash(getCard(self.split_hand_2[player_card_count]))})
+		-- if player busts then then player loses
+		if check_split_bust(self, 2) then
+			self.stats.busts = self.stats.busts + 1 
+			split_stand(self)
+		end
+		if self.split_hand_2_count == 21 then
+			split_stand(self)
+		end
+	end
+end
+
+function split_stand(self)
+
+	--first stand
+	if not self.on_second_hand then
+		self.on_second_hand = true
+		self.split_hand_2[2] = self.deck[get_card_count(self)]
+
+		self.split_hand_2_x = self.split_hand_2_x + 50
+		
+		local card = factory.create("#card", vmath.vector3(self.split_hand_2_x, self.split_hand_2_y, 1), nil, nil, nil)
+		msg.post(hash(card), "play_animation", {id = hash(getCard(self.split_hand_2[2]))})
+
+		--add the new cards to the active go table
+		insert_active_go(self, card)
+
+		if check_split_hand_ace(self, 2) then
+			set_split_hand_ace(self, 2)
+		else
+			self.split_hand_2_count = self.split_hand_2[1][2] + self.split_hand_2[2][2]
+		end
+
+		enable_split_counts(self)
+		set_split_hand_counts(self)
+
+		--check 21 auto-stand
+		if self.split_hand_2_count == 21 then
+			split_stand(self)
+		end
+	--second stand
+	else
+		flip_hidden_card(self)
+		local dealer_card_y = 850
+		local dealer_card_x = 300
+		while self.dealer_count <= 16 do
+			local card_count = get_card_count(self)
+			local dealer_card_count = get_dealer_card_count(self)
+			self.dealer[dealer_card_count] = self.deck[card_count]
+
+			--determine correct location for the dealers card
+			if dealer_card_count % 4 == 0 then
+				dealer_card_y = dealer_card_y - 50
+				dealer_card_x = 250
+			else
+				dealer_card_x = dealer_card_x + 50
+			end
+			local new_card = factory.create("#card", vmath.vector3(dealer_card_x, dealer_card_y, 1), nil, nil, nil)
+			insert_active_go(self, new_card)
+			msg.post(hash(new_card), "play_animation", {id = hash(getCard(self.dealer[dealer_card_count]))})
+
+			--if the dealer drew an ace
+			if self.dealer[dealer_card_count][1] == 'A' then
+
+				--if doesn't have an ace already in their hand
+				if self.dealer_ace_count == 0 then
+
+					--if the dealer would bust with an 11
+					if self.dealer_count + 11 <= 21 then
+						self.dealer_ace_count = self.dealer_count + 1
+						self.dealer_count = self.dealer_count + 11
+					else
+						self.dealer_count = self.dealer_count + 1
+					end
+
+					--if the dealer does already have an ace in their hand 
+				else
+					self.dealer_count = self.dealer_count + 1
+					self.dealer_ace_count = self.dealer_ace_count + 1
+				end
+			else
+
+				--if the dealer didn't have and ace and didn't draw an ace
+				if self.dealer_ace_count == 0 then
+					self.dealer_count = self.dealer_count + self.dealer[dealer_card_count][2]
+
+					--if the dealer did have an ace and didn't draw one
+				else
+					if self.dealer_count + self.dealer[dealer_card_count][2] > 21 then
+						self.dealer_count = self.dealer_ace_count + self.dealer[dealer_card_count][2]
+						self.dealer_ace_count = 0
+					else
+						self.dealer_count = self.dealer_count + self.dealer[dealer_card_count][2]
+					end
+				end
+			end
+		end
+		set_dealer_count(self)
+		set_split_result(self)
+	end
+end
+
+function set_split_result(self)
+	local dealer = self.dealer_count
+	local h1 = self.split_hand_1_count
+	local h2 = self.split_hand_2_count
+
+	if check_split_bust(self, 1) then
+		set_split_outcome(self, 1, -1)
+	elseif check_dealer_bust(self) then
+		set_split_outcome(self, 1, 1)	
+	elseif h1 < dealer then
+		set_split_outcome(self, 1, -1)
+	elseif h1 > dealer then
+		set_split_outcome(self, 1, 1)
+	elseif h1 == dealer then
+		set_split_outcome(self, 1, 0)
+	end
+
+	if check_split_bust(self, 2) then
+		set_split_outcome(self, 2, -1)
+	elseif check_dealer_bust(self) then
+		set_split_outcome(self, 2, 1)	
+	elseif h2 < dealer then
+		set_split_outcome(self, 2, -1)
+	elseif h2 > dealer then
+		set_split_outcome(self, 2, 1)
+	elseif h2 == dealer then
+		set_split_outcome(self, 2, 0)
+	end
+end
+
+function split_double(self)
+	if self.split_double_hand_1 then
+		self.split_double_1 = true
+	else
+		self.split_double_2 = true
+	end
+	self.balance = self.balance - self.bet
+	self.stats.money_wagered = self.stats.money_wagered + self.bet
+	set_balance(self)
+
+	split_hit(self)
+
+	if self.split_double_hand_1 == true and self.split_hand_1_count < 21 then
+		split_stand(self)
+	elseif self.split_double_hand_1 == false and self.split_hand_2_count < 21 then
+		split_stand(self)
+	end
+	
+	self.split_double_hand_1 = false
+end
+	
+function check_valid_split_double(self)
+	if self.on_second_hand then
+		if self.split_hand_2[3] == nil then
+			return true
+		end
+	else
+		if self.split_hand_1[3] == nil then
+			return true
+		end
+	end
+	return false
+end
+
+function clear_cards(self)
+	for i, v in ipairs(self.active_go) do
+		go.delete(v)
+	end
+
+	msg.post('#gui', 'disable_split_counts')
+	msg.post('#gui', 'disable_split_outcomes')
+	
+	self.player_ace_count = 0
+	self.dealer_ace_count = 0
+	self.winnings_multiplier = 1
+
+	self.insurance_activated = false
+	self.hidden_card = 0
+	self.active_go = {}
+	self.active_go_counter = 1
+	self.player = {}
+	self.dealer = {}
+	self.card_counter = 4
+	self.player_card_counter = 2
+	self.dealer_card_counter = 2
+	self.player_count = 0
+	self.dealer_count = 0
+	self.player_card_x = 300
+	self.player_card_y = 275
+
+	--split properties
+	self.did_split = false
+	self.on_second_hand = false
+	self.split_hand_1 = {}
+	self.split_hand_2 = {}
+	self.split_double_1 = false
+	self.split_double_2 = false
+	self.split_hand_1_x = 425
+	self.split_hand_1_y = 275
+	self.split_hand_2_x = 125
+	self.split_hand_2_y = 275
+	self.split_hand_1_count = 0
+	self.split_hand_1_ace_count = 0
+	self.split_hand_2_count = 0
+	self.split_hand_2_ace_count = 0
+	self.split_hand_1_card_counter = 2
+	self.split_hand_2_card_counter = 2
+	self.split_double_hand_1 = true
+	
+end
+
+function payout(self, outcome)
+	if outcome == 1 then
+		if self.split_double_1 then
+			self.balance = self.balance + self.bet*4
+			self.split_double_1 = 1
+		elseif self.split_double_2 then
+			self.balance = self.balance + self.bet*4
+			self.split_double_2 = 1
+		else
+			self.balance = self.balance + (self.bet*2) * self.winnings_multiplier
+		end
+		sound.play('#win_hand')
+		self.stats.hands_won = self.stats.hands_won + 1
+	elseif outcome == 0 then
+		if self.split_double_1 == 2 then
+			self.balance = self.balance + self.bet * 2
+			self.split_double_1 = 1
+		elseif self.split_double_2 == 2 then
+			self.balance = self.balance + self.bet * 2
+			self.split_double_2 = 1
+		else
+			self.balance = self.balance + self.bet * self.winnings_multiplier
+		end
+		self.stats.hands_pushed = self.stats.hands_pushed + 1
+	else
+		self.stats.hands_lost = self.stats.hands_lost + 1
+	end
+	self.stats.hands_played = self.stats.hands_played + 1
+	self.stats.win_percent = self.stats.hands_won / self.stats.hands_played * 100
+	set_balance(self)
+	if self.balance <= 0 then
+		msg.post('#gui', 'borrow_money')
+	end
+end
+
+function check_ace(self)
+	return self.player[1][1] == 'A' or self.player[2][1] == 'A'
+end
+
+function check_split_hand_ace(self, hand)
+	if hand == 1 then
+		return self.split_hand_1[1][1] == 'A' or self.split_hand_1[2][1] == 'A'
+	elseif hand == 2 then
+		return self.split_hand_2[1][1] == 'A' or self.split_hand_2[2][1] == 'A'
+	end
+end
+
+function check_dealer_ace(self)
+	return self.dealer[1][1] == 'A' or self.dealer[2][1] == 'A'
+end
+
+function insurance_wins(self)
+	self.balance = self.balance + self.bet / 2
+	sound.play('#win_hand')
+	msg.post('#gui', 'enable_outcome', {text = 'INSURANCE BET WINS'})
+	flip_hidden_card(self)
+	set_balance(self)
+	self.has_active_hand = fasle
+	enable_draw(self)
+end
+
+function offer_insurance(self)
+	enable_insurance()
+	self.has_active_hand = false
+end
+
+function accept_insurance(self)
+	disable_insurance()
+	self.balance = self.balance - self.bet/2
+	self.stats.money_wagered = self.stats.money_wagered + self.bet /2
+	set_balance(self)
+	self.has_active_hand = true
+	self.insurance_activated = true
+	check_blackjack(self)
+end
+
+function refuse_insurance(self)
+	disable_insurance()
+	self.has_active_hand = true
+	self.insurance_activated = false
+	check_blackjack(self)
+end
+
+function check_blackjack(self)
+	if self.player_count == 21 and self.dealer_count ~= 21 then
+		self.winnings_multiplier = 1.5
+		msg.post('#gui', 'enable_outcome', {text = 'BLACKJACK'})
+		self.stats.blackjacks = self.stats.blackjacks + 1
+		sound.play('#blackjack')
+		set_win(self)
+	elseif self.player_count ~= 21 and self.dealer_count == 21 then
+		msg.post('#gui', 'enable_outcome', {text = 'DEALER HAS BLACKJACK'})
+		if self.insurance_activated then
+			insurance_wins(self)
+		else
+			set_lose(self)
+		end
+	elseif self.player_count == 21 and self.dealer_count == 21 then
+		msg.post('#gui', 'enable_outcome', {text = 'PUSH'})
+		set_push(self)
+	end
+end
+
+function set_outcome(self)
+	local did_win = check_win(self)
+		if did_win == 1 then
+			msg.post('#gui', 'enable_outcome', {text = 'PLALYER WINS'})
+			set_win(self)
+		elseif did_win == 0 then
+			msg.post('#gui', 'enable_outcome', {text = 'PUSH'})
+			set_push(self)
+		elseif did_win == -1 then
+			msg.post('#gui', 'enable_outcome', {text = 'DEALER WINS'})
+			set_lose(self)
+		end
+end
+
+function set_push(self)
+	self.has_active_hand = fasle
+	enable_draw(self)
+	flip_hidden_card(self)
+	payout(self, 0)
+	set_balance(self)
+end
+
+function set_lose(self)
+	self.has_active_hand = fasle
+	enable_draw(self)
+	flip_hidden_card(self)
+	payout(self, -1)
+	set_balance(self)
+end
+
+function set_win(self)
+	self.has_active_hand = fasle
+	enable_draw(self)
+	flip_hidden_card(self)
+	payout(self, 1)
+	set_balance(self)
+end
+
+function set_split_outcome(self, hand, outcome)
+	if self.on_second_hand then
+		self.has_active_hand = fasle
+		enable_draw(self)
+		flip_hidden_card(self)
+	end
+	if hand == 1 then
+		if outcome == 1 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 1, text = 'win'})
+			payout(self, 1)
+		elseif outcome == 0 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 1, text = 'push'})
+			payout(self, 0)
+		elseif outcome == -1 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 1, text = 'lose'})
+			payout(self, -1)
+		end
+	elseif hand == 2 then
+		if outcome == 1 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 2, text = 'win'})
+			payout(self, 1)
+		elseif outcome == 0 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 2, text = 'push'})
+			payout(self, 0)
+		elseif outcome == -1 then
+			msg.post('#gui', 'enable_split_outcomes', {hand = 2, text = 'lose'})
+			payout(self, -1)
+		end
+	end
+	set_balance(self)
+end
+
+function get_card_count(self)
+	self.card_counter = self.card_counter + 1
+	return self.card_counter
+end
+
+function get_player_card_count(self)
+	self.player_card_counter = self.player_card_counter + 1
+	return self.player_card_counter
+end
+
+function get_dealer_card_count(self)
+	self.dealer_card_counter = self.dealer_card_counter + 1
+	return self.dealer_card_counter
+end
+
+function getCard(card)
+	return 'card' .. card[3] .. card[1]
+end
+
+function insert_active_go(self, go)
+	table.insert(self.active_go, self.active_go_counter, go)
+	self.active_go_counter = self.active_go_counter + 1
+end
+
+function flip_hidden_card(self)
+	msg.post(hash(self.hidden_card), "play_animation", {id = hash(getCard(self.dealer[2]))})
+	set_dealer_count(self)
+end
+
+function shuffle(x)
+	math.randomseed(os.time())
+	shuffled = {}
+	for i, v in ipairs(x) do
+		local pos = math.random(1, #shuffled+1)
+		table.insert(shuffled, pos, v)
+	end
+	return shuffled
+end
+
+function set_ace(self)
+	if self.player[1][1] == 'A' and self.player[2][1] == 'A' then
+		self.player_ace_count = 2
+		self.player_count = 12
+	else
+		self.player_count = self.player[1][2] + self.player[2][2]
+		if self.player[1][1] == 'A' and self.player_count < 21 then
+			self.player_ace_count = 1 + self.player[2][2]
+		end
+		if self.player[2][1] == 'A' and self.player_count < 21 then
+			self.player_ace_count = self.player[1][2] + 1
+		end
+	end
+end
+
+function set_split_hand_ace(self, hand)
+	if hand == 1 then
+		if self.split_hand_1[1][1] == 'A' and self.split_hand_1[2][1] == 'A' then
+			self.split_hand_1_ace_count = 2
+			self.split_hand_1_count = 12
+		else
+			self.split_hand_1_count = self.split_hand_1[1][2] + self.split_hand_1[2][2]
+			if self.split_hand_1[1][1] == 'A' and self.split_hand_1_count < 21 then
+				self.split_hand_1_ace_count = 1 + self.split_hand_1[2][2]
+			end
+			if self.split_hand_1[2][1] == 'A' and self.split_hand_1_count < 21 then
+				self.split_hand_1_ace_count = self.split_hand_1[1][2] + 1
+			end
+		end
+	elseif hand == 2 then
+		if self.split_hand_2[1][1] == 'A' and self.split_hand_2[2][1] == 'A' then
+			self.split_hand_2_ace_count = 2
+			self.split_hand_2_count = 12
+		else
+			self.split_hand_2_count = self.split_hand_2[1][2] + self.split_hand_2[2][2]
+			if self.split_hand_2[1][1] == 'A' and self.split_hand_2_count < 21 then
+				self.split_hand_2_ace_count = 1 + self.split_hand_2[2][2]
+			end
+			if self.split_hand_2[2][1] == 'A' and self.split_hand_2_count < 21 then
+				self.split_hand_2_ace_count = self.split_hand_2[1][2] + 1
+			end
+		end
+	end
+end
+
+function set_dealer_ace(self)
+	if self.dealer[1][1] == 'A' and self.dealer[2][1] == 'A' then
+		self.dealer_ace_count = 2
+		self.dealer_count = 12
+	else
+		self.dealer_count = self.dealer[1][2] + self.dealer[2][2]
+		if self.dealer[1][1] == 'A' then
+			self.dealer_ace_count = 1 + self.dealer[2][2]
+		end
+		if self.dealer[2][1] == 'A' then
+			self.dealer_ace_count = self.dealer[1][2] + 1
+		end
+	end
+end
+
+function check_player_bust(self)
+	return self.player_count > 21
+end
+
+function check_split_bust(self, hand)
+	if hand == 1 then
+		return self.split_hand_1_count > 21
+	elseif hand == 2 then
+		return self.split_hand_2_count > 21
+	end
+end
+
+function check_dealer_bust(self)
+	return self.dealer_count > 21
+end
+
+function check_win(self)
+	if check_dealer_bust(self) then
+		return 1
+	else
+		if self.player_count > self.dealer_count then
+			return 1
+		end
+		if self.player_count == self.dealer_count then
+			return 0
+		end
+		if self.player_count < self.dealer_count then
+			return -1
+		end
+	end
+end
+
+function check_split_win(self, hand)
+	if check_dealer_bust(self) then
+		return 1
+	elseif hand == 1 then
+		if self.split_hand_1_count > self.dealer_count then
+			return 1
+		end
+		if self.split_hand_1_count == self.dealer_count then
+			return 0
+		end
+		if self.split_hand_1_count < self.dealer_count then
+			return -1
+		end
+	elseif hand == 2 then
+		if self.split_hand_2_count > self.dealer_count then
+			return 1
+		end
+		if self.split_hand_2_count == self.dealer_count then
+			return 0
+		end
+		if self.split_hand_2_count < self.dealer_count then
+			return -1
+		end
+	end
+end
+
+function borrow_money(self)
+	self.stats.money_borrowed = self.stats.money_borrowed + 1000
+	self.balance = 1000
+	set_balance(self)
+end
+
+function save(self)
+	local filename = sys.get_save_file("data", "data")
+	sys.save(filename, {balance = self.balance})
+end
+
+function save_stats(self)
+	self.stats.net_profit = self.balance - 1000 - self.stats.money_borrowed
+	local filename = sys.get_save_file("data", "stats")
+	sys.save(filename, self.stats)
+end
+
+function load(self)
+	local filename = sys.get_save_file("data", "data")
+	local data = sys.load(filename)
+	if data.balance == nil then
+		self.balance = 1000
+	else
+		self.balance = data.balance
+	end
+end
+
+function load_sound(self)
+	local filename = sys.get_save_file("data", "sound")
+	local data = sys.load(filename)
+	if data.sound == nil then
+		self.sound = true
+	else
+		self.sound = data.sound
+	end
+end
+
+function load_stats(self)
+	local filename = sys.get_save_file("data", "stats")
+	local data = sys.load(filename)
+	if data.hands_played == nil then
+		return
+	else
+		self.stats = data
+	end
+end
+
+function final(self)
+	save(self)
+	save_stats(self)
+end
+
+--gui enabling functions
+
+function enable_count()
+	msg.post('#gui', 'enable_count')
+end
+
+function disble_count()
+	msg.post('#gui', 'disable_count')
+end
+
+function enable_split_counts(self)
+	msg.post('#gui', 'enable_split_counts', {hand_1_count = self.split_hand_1_count, hand_1_ace_count = self.split_hand_1_ace_count, hand_2_count = self.split_hand_2_count, hand_2_ace_count = self.split_hand_2_ace_count})
+end
+
+function disable_split_counts()
+	msg.post('#gui', 'disable_split_counts')
+end
+
+function disable_outcome()
+	msg.post('#gui', 'disable_outcome')
+end
+
+function set_balance(self)
+	msg.post('#gui', 'set_balance', {balance = self.balance})
+end
+
+function set_player_count(self)
+	msg.post('#gui', 'set_player_count', {count = self.player_count, ace_count = self.player_ace_count})
+end
+
+function set_dealer_count(self)
+	msg.post('#gui', 'set_dealer_count', {count = self.dealer_count})
+end
+
+function set_split_hand_counts(self)
+	msg.post('#gui', 'set_split_counts', {hand_1_count = self.split_hand_1_count, hand_1_ace_count = self.split_hand_1_ace_count, hand_2_count = self.split_hand_2_count, hand_2_ace_count = self.split_hand_2_ace_count})
+end
+
+function set_dealer_count_hidden_card(value)
+	msg.post('#gui', 'set_dealer_count', {count = value})
+end
+
+function enable_draw(self)
+	msg.post('#gui', 'enable_draw')
+end
+
+function disable_draw(self)
+	msg.post('#gui', 'disable_draw')
+end
+
+function enable_insurance()
+	msg.post('#gui', 'enable_insurance')
+end
+
+function disable_insurance()
+	msg.post('#gui', 'disable_insurance')
+end 
+
+function enable_bet_menu()
+	msg.post('#gui', 'enable_bet_menu')
+end
+
+function disable_bet_menu()
+	msg.post('#gui', 'disable_bet_menu')
+end 

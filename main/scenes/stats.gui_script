@@ -1,0 +1,57 @@
+local monarch = require "monarch.monarch"
+
+function init(self)
+    msg.post(".", "acquire_input_focus")
+    get_stats(self)    
+end
+
+function on_input(self, action_id, action)
+    if action_id == hash('touch') and action.pressed then
+        if gui.pick_node(gui.get_node("back_button"), action.x, action.y) then
+            msg.post('main:/home#main', 'touch')
+            monarch.back()
+        end
+    end
+end
+
+function get_stats(self)
+    local filename = sys.get_save_file("data", "stats")
+    local data = sys.load(filename)
+    if data.hands_played == nil then
+        local stats = {
+            hands_played = 0,
+            hands_won = 0,
+            hands_pushed = 0,
+            hands_lost = 0,
+            win_percent = 0,
+            blackjacks = 0,
+            busts = 0,
+            money_wagered = 0,
+            net_profit = 0,
+            money_borrowed = 0}
+            set_nodes(stats)
+    else
+        set_nodes(data)
+    end
+end
+
+function set_nodes(data)
+    gui.set_text(gui.get_node('hands_played'), 'Hands played: ' .. data.hands_played)
+    gui.set_text(gui.get_node('hands_won'), 'hands won: ' .. data.hands_won)
+    gui.set_text(gui.get_node('hands_pushed'), 'Hands pushed: ' .. data.hands_pushed)
+    gui.set_text(gui.get_node('hands_lost'), 'Hands lost: ' .. data.hands_lost)
+    gui.set_text(gui.get_node('win_percent'), 'Win percent: ' .. round(data.win_percent, 2) .. '%')
+    gui.set_text(gui.get_node('blackjacks'), 'blackjacks: ' .. data.blackjacks)
+    gui.set_text(gui.get_node('busts'), 'busts: ' .. data.busts)
+    gui.set_text(gui.get_node('money_wagered'), 'money wagered: ' .. data.money_wagered)
+    gui.set_text(gui.get_node('net_profit'), 'net profit: ' .. data.net_profit)
+    gui.set_text(gui.get_node('money_borrowed'), 'money borrowed: ' .. data.money_borrowed)
+end
+
+function round(val, decimal)
+    if (decimal) then
+        return math.floor( (val * 10^decimal) + 0.5) / (10^decimal)
+    else
+        return math.floor(val+0.5)
+    end
+end
